@@ -1,4 +1,5 @@
 opencv-python>=4.8
-mediapipe>=0.10.9
+mediapipe==0.10.14
 deepface>=0.0.92
 numpy>=1.24
+werkzeug>=3.0
