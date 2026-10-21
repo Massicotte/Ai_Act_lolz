@@ -44,6 +44,16 @@ Une **fenêtre JSON parallèle** (touche `j`) projette en direct toutes les
 données que la machine produit sur vous chaque seconde — l'effet est
 saisissant : le visage d'un côté, les colonnes de données de l'autre.
 
+Une **troisième fenêtre « Contrôles »** regroupe la commande de la démo :
+un **slider de biais de féminité** (0 % = probabilités brutes du modèle,
+100 % = tout basculé vers « féminin » — réglage live, défaut 30 %) et un
+**interrupteur par info** pour l'afficher ou la masquer. Le clavier reste
+fonctionnel et se synchronise avec les interrupteurs.
+
+Le panneau de données s'adapte à la taille de la fenêtre (il ne dépasse
+jamais un quart de l'image) et la vidéo **ne se déforme jamais** :
+l'agrandissement de la fenêtre ajoute des bandes noires (letterbox).
+
 Non inclus volontairement : inférence d'origine ethnique — interdite par
 l'AI Act (art. 5.1.g) et scientifiquement infondée. Voir `AI_ACT_NOTES.md`.
 
@@ -133,7 +143,9 @@ art. 9).
 
 Chaque info du panneau peut être affichée ou masquée individuellement —
 pratique pour construire la progression du show : vous ne montrez au
-public, une par une, que les capacités de la machine.
+public, une par une, que les capacités de la machine. Deux façons :
+par touche clavier (ci-dessous) ou par interrupteur dans la fenêtre
+**Contrôles** (les deux restent synchronisés).
 
 | Touche | Info / action |
 |---|---|
