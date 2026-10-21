@@ -12,12 +12,16 @@ alors le nom de la personne reconnue au lieu de "vous". Donnee biometrique :
 consentement obligatoire (RGPD art. 9, AI Act art. 5).
 
 Touches : 'q' quitter, 'd' afficher/masquer la ROI front (debug rPPG),
-'f' basculer le plein ecran, 'b' basculer le biais genre de demo.
+'f' basculer le plein ecran, 'j' afficher/masquer la fenetre JSON brut.
 """
+
+import json
+import time
 
 import cv2
 import numpy as np
 
+from trackers.ahegao_detector import AhegaoDetector
 from trackers.deepface_analyzer import DeepFaceAnalyzer
 from trackers.face_recognizer import PeopleRecognizer
 from trackers.facemesh_tracker import FaceMeshTracker
@@ -25,8 +29,24 @@ from trackers.rppg import RPPGEstimator
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 WINDOW = "Ai Act Lolz"
+JSON_WINDOW = "Ai Act Lolz - JSON brut"
 PANEL_X, PANEL_Y = 10, 24
 LINE_H = 26
+JSON_INTERVAL = 1.0
+AHEGAO_ALERT = 0.75
+
+
+def draw_json_window(payload):
+    """Fenetre noire affichant le JSON brut produit chaque seconde."""
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    canvas = np.zeros((900, 640, 3), dtype=np.uint8)
+    y = 28
+    for line in text.splitlines():
+        cv2.putText(canvas, line, (14, y), FONT, 0.5, (120, 220, 120), 1, cv2.LINE_AA)
+        y += 22
+        if y > 880:
+            break
+    return canvas
 
 
 def letterbox(frame, canvas_w, canvas_h):
@@ -69,8 +89,14 @@ def main():
     analyzer = DeepFaceAnalyzer(interval=2.5)
     recognizer = PeopleRecognizer(interval=1.0)
     rppg = RPPGEstimator(fps=30.0, window_sec=15.0)
+    ahegao = AhegaoDetector()
 
-    print(f"{WINDOW} en ligne - 'q' quitter, 'f' plein ecran, 'd' debug rPPG, 'b' biais genre.")
+    cv2.namedWindow(JSON_WINDOW, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(JSON_WINDOW, 640, 900)
+    show_json = True
+    last_json_t = 0.0
+
+    print(f"{WINDOW} en ligne - 'q' quitter, 'f' plein ecran, 'j' JSON, 'd' debug rPPG.")
     print("Le premier lancement telecharge les modeles DeepFace, patience...")
 
     show_roi = False
@@ -84,6 +110,9 @@ def main():
         analyzer.update(frame)
         recognizer.update(frame)
         face = mesh.process(frame)
+
+        fem, masc = analyzer.gender_percents()
+        ahegao_score = ahegao.score(frame, face) if face is not None else 0.0
 
         lines = []
         if face is not None:
@@ -100,8 +129,14 @@ def main():
 
             lines.append(("Identite", label))
             lines.append(("Age estime", analyzer.smoothed_age()))
-            lines.append(("Apparence*", analyzer.gender()))
+            if fem is not None:
+                lines.append(("Femininite*", f"{fem:.0f} %"))
+                lines.append(("Masculinite*", f"{masc:.0f} %"))
+            else:
+                lines.append(("Femininite*", "--"))
+                lines.append(("Masculinite*", "--"))
             lines.append(("Emotion dom.", analyzer.emotion()))
+            lines.append(("Ahegao", f"{int(100 * ahegao_score)} %"))
             lines.append(("Sourire", f"{int(100 * face.smile)} %"))
             lines.append(("Pose tete", f"yaw {face.yaw:+.0f} pitch {face.pitch:+.0f}"))
             lines.append(("Attention", f"{face.attention} %"))
@@ -114,7 +149,40 @@ def main():
         else:
             lines.append(("Statut", "aucun visage detecte"))
 
+        if ahegao_score >= AHEGAO_ALERT:
+            h, w = frame.shape[:2]
+            cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), 18)
+            cv2.putText(frame, "AHEGAO DETECTE", (w // 2 - 300, h // 2), FONT, 1.4, (0, 0, 255), 4, cv2.LINE_AA)
+
         draw_panel(frame, lines)
+
+        now_t = time.perf_counter()
+        if show_json and now_t - last_json_t >= JSON_INTERVAL:
+            last_json_t = now_t
+            payload = {
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "visage_detecte": face is not None,
+            }
+            if face is not None:
+                payload.update({
+                    "identite": recognizer.name(),
+                    "age_estime": analyzer.smoothed_age(),
+                    "femininite_pct": round(fem, 1) if fem is not None else None,
+                    "masculinite_pct": round(masc, 1) if masc is not None else None,
+                    "emotion": analyzer.emotion(),
+                    "ahegao_score": round(ahegao_score, 2),
+                    "sourire_pct": int(100 * face.smile),
+                    "pose": {"yaw": round(face.yaw, 1), "pitch": round(face.pitch, 1), "roll": round(face.roll, 1)},
+                    "attention_pct": face.attention,
+                    "stabilite_pct": face.stability,
+                    "distance_cm": round(face.distance_cm, 0),
+                    "clignements": face.blinks,
+                    "clignements_par_min": round(face.blink_rate, 1),
+                    "perclos_pct": round(face.perclos, 1),
+                    "bpm_estime": round(bpm, 0) if bpm is not None else None,
+                })
+            cv2.imshow(JSON_WINDOW, draw_json_window(payload))
+
         if fullscreen:
             try:
                 _, _, win_w, win_h = cv2.getWindowImageRect(WINDOW)
@@ -135,10 +203,10 @@ def main():
             )
         if key == ord("d"):
             show_roi = not show_roi
-        if key == ord("b"):
-            new_margin = 100.0 - analyzer.gender_margin
-            analyzer.gender_margin = new_margin
-            print(f"Biais genre : marge masculine = {analyzer.gender_margin:.0f}% (confiance Man requise).")
+        if key == ord("j"):
+            show_json = not show_json
+            if not show_json:
+                cv2.destroyWindow(JSON_WINDOW)
 
     analyzer.stop()
     recognizer.stop()

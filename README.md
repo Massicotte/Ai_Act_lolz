@@ -23,8 +23,9 @@ l'AI Act et le RGPD encadrent ces usages.
 |---|---|---|
 | Identité (nom) | DeepFace VGG-Face + dossier `people/` | Bonne (si photos de qualité) |
 | Âge estimé | DeepFace | ± 5–8 ans |
-| Apparence de genre perçue* | DeepFace (biais de démo réglable) | Stéréotype visuel, ≠ identité de genre |
+| Féminité perçue / Masculinité perçue (en %) | DeepFace (probabilités brutes) | Stéréotype visuel, ≠ identité de genre |
 | Émotion dominante | DeepFace | Approximatif, contesté scientifiquement |
+| Ahegao (blague finale) | Heuristique MediaPipe : yeux plissés + bouche ouverte + langue | Humoristique, faux positifs assumés |
 | Sourire | MediaPipe (largeur bouche / visage) | Bonne |
 | Pose de la tête (yaw / pitch / roll) | MediaPipe + solvePnP | Bonne |
 | Attention (regard + yeux ouverts) | MediaPipe | Bonne |
@@ -34,12 +35,14 @@ l'AI Act et le RGPD encadrent ces usages.
 | Rythme cardiaque (rPPG) | FFT sur le canal vert du front | Expérimental |
 
 \* "Apparence perçue" : le modèle devine des stéréotypes d'apparence,
-pas le genre réel de la personne. Excellent point de discussion sur scène.
+pas le genre réel de la personne. La démo affiche désormais **les deux
+pourcentages bruts** (fémininité / masculinité) plutôt qu'un binaire —
+montrer les chiffres rend le biais visible : la machine ne "voit" pas un
+genre, elle calcule des probabilités sur des stéréotypes.
 
-**Biais de démo (pédagogique)** : par défaut, quand le modèle a un doute
-(confiance "masculine" < 60 %), la démo affiche "feminine\*" — pour montrer
-comment on peut faire dire n'importe quoi à un modèle en décalant son seuil.
-Touche `b` pour ajuster en live.
+Une **fenêtre JSON parallèle** (touche `j`) projette en direct toutes les
+données que la machine produit sur vous chaque seconde — l'effet est
+saisissant : le visage d'un côté, les colonnes de données de l'autre.
 
 Non inclus volontairement : inférence d'origine ethnique — interdite par
 l'AI Act (art. 5.1.g) et scientifiquement infondée. Voir `AI_ACT_NOTES.md`.
@@ -132,8 +135,12 @@ art. 9).
 |---|---|
 | `q` | Quitter |
 | `f` | Plein écran (letterbox : bandes noires, proportions conservées) |
+| `j` | Afficher/masquer la fenêtre JSON brut (données produites chaque seconde) |
 | `d` | Afficher/masquer la ROI front (debug rPPG) |
-| `b` | Ajuster le biais genre de démo (seuil de confiance "masculine") |
+
+À 75 % de score ahegao, un cadre rouge "AHEGAO DETECTE" s'affiche — c'est
+la blague finale, et aussi la démonstration qu'une machine peut vous
+faire dire n'importe quoi avec quelques heuristiques.
 
 ## En faire un .exe (PyInstaller)
 

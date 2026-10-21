@@ -22,15 +22,11 @@ EMOTION_FR = {
 
 
 class DeepFaceAnalyzer:
-    # Biais volontaire (demo) : marge requise pour annoncer "masculine".
-    # Si la confiance Man est en dessous de cette marge, le doute -> feminine.
-    GENDER_MARGIN = 60.0  # seuil de confiance (%) en dessous duquel le doute -> feminine
-
-    def __init__(self, interval=2.5, history=8, gender_margin=GENDER_MARGIN):
+    def __init__(self, interval=2.5, history=8):
         self.interval = interval
-        self.gender_margin = gender_margin
         self._age_hist = deque(maxlen=history)
         self._gender = None
+        self._gender_raw = None
         self._emotion = None
         self._last_result = None
         self._latest = None
@@ -55,24 +51,22 @@ class DeepFaceAnalyzer:
                     if isinstance(res, list):
                         res = res[0]
                     self._age_hist.append(float(res.get("age", 0.0) or 0.0))
-                    self._gender = self._bias_gender(res)
+                    gender_raw = res.get("gender")
+                    self._gender_raw = gender_raw if isinstance(gender_raw, dict) else None
+                    self._gender = res.get("dominant_gender")
                     self._emotion = res.get("dominant_emotion")
                     self._last_result = time.time()
                 except Exception:
                     pass  # pas de visage -> on garde les dernieres valeurs
             self._stop.wait(self.interval)
 
-    def _bias_gender(self, res):
-        """Applique le biais de demo : en cas de doute, annoncer feminine."""
-        gender = res.get("dominant_gender")
-        if gender != "Man":
-            return gender
-        conf = res.get("gender")
-        if not isinstance(conf, dict):
-            return gender
-        if float(conf.get("Man", 0.0)) < self.gender_margin:
-            return "Woman"
-        return gender
+    def gender_percents(self):
+        """Retourne (femininite %, masculinite %) telles que vues par la machine."""
+        if not isinstance(self._gender_raw, dict):
+            return None, None
+        fem = float(self._gender_raw.get("Woman", 0.0))
+        masc = float(self._gender_raw.get("Man", 0.0))
+        return fem, masc
 
     def smoothed_age(self):
         if not self._age_hist:

@@ -26,6 +26,7 @@ class FaceResult:
     smile: float
     distance_cm: float
     stability: int
+    landmarks: object = None
 
 
 class FaceMeshTracker:
@@ -189,6 +190,7 @@ class FaceMeshTracker:
             smile=smile,
             distance_cm=distance_cm,
             stability=stab,
+            landmarks=pts,
         )
 
     @staticmethod
