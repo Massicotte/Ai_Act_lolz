@@ -51,6 +51,7 @@ class FaceMeshTracker:
     _ATTENTION_PITCH = 13.0
     _SMILE_L = (61, 39, 37, 91, 267, 269, 291)
     _SMILE_TH = 0.62
+    _DIST_K = 2600.0
     _BLINK_WINDOW = 60.0
 
     def __init__(self):
@@ -81,7 +82,10 @@ class FaceMeshTracker:
             return None
 
         landmarks = res.multi_face_landmarks[0].landmark
-        pts = np.array([(lm.x * w, lm.y * h) for lm in landmarks], dtype=np.float64)
+        pts = np.empty((len(landmarks), 2), dtype=np.float64)
+        for i, lm in enumerate(landmarks):
+            pts[i, 0] = lm.x * w
+            pts[i, 1] = lm.y * h
 
         # --- Pose de la tete (solvePnP) ---
         image_pts = np.array(
@@ -145,20 +149,18 @@ class FaceMeshTracker:
         self._attention_hist.append(looking)
         attention = int(100.0 * sum(self._attention_hist) / len(self._attention_hist))
 
-        # --- Sourire (largeur bouche normalisee par la largeur du visage) ---
-        mouth_w = abs(pts[291][0] - pts[61][0])
-
         # --- Boite englobante du visage ---
         bx1, by1 = pts.min(axis=0)
         bx2, by2 = pts.max(axis=0)
         box = (int(bx1), int(by1), int(bx2), int(by2))
-        face_w = max(box[2] - box[0], 1.0)
+        face_w = max(box[2] - box[0], 1)
+        mouth_w = abs(pts[291][0] - pts[61][0])
         smile = max(0.0, min(1.0, (mouth_w / face_w - 0.42) / (self._SMILE_TH - 0.42)))
 
         # --- Distance estimee (proportion empirique du visage dans le cadre) ---
-        distance_cm = 2600.0 / face_w
+        distance_cm = self._DIST_K / face_w
 
-        # --- Stabilite du visage (inversely proportionnelle au mouvement) ---
+        # --- Stabilite du visage (inversement proportionnelle au mouvement) ---
         center = ((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
         if self._prev_center is not None:
             move = (abs(center[0] - self._prev_center[0]) + abs(center[1] - self._prev_center[1])) / 2.0

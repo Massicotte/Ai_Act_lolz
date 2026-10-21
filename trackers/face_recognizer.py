@@ -93,7 +93,11 @@ class PeopleRecognizer:
         return names, embeddings
 
     def update(self, frame):
-        self._latest = frame.copy()
+        self._latest = frame
+
+    def needs_frame(self):
+        """True si le thread de reconnaissance a consomme sa derniere frame."""
+        return self._latest is None
 
     def _loop(self):
         while not self._stop.is_set():
@@ -114,6 +118,8 @@ class PeopleRecognizer:
                         self._name = self._names[best] if sims[best] >= self.threshold else None
                 except Exception:
                     pass
+                finally:
+                    self._latest = None
             self._stop.wait(self.interval)
 
     def name(self):

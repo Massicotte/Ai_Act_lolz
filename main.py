@@ -140,14 +140,18 @@ def main():
                 print("Webcam illisible (60 echecs consecutifs) : arret. Verifiez la confidentialite camera.")
                 break
             continue
-        frame = cv2.flip(frame, 1)  # effet miroir
+        read_failures = 0
+        cv2.flip(frame, 1, dst=frame)  # effet miroir, en place
 
-        analyzer.update(frame)
-        recognizer.update(frame)
+        need_deepface_frame = analyzer.needs_frame() or (recognizer.needs_frame())
+        if need_deepface_frame:
+            shared = frame.copy()
+            analyzer.update(shared)
+            recognizer.update(shared)
         face = mesh.process(frame)
 
         fem, masc = analyzer.gender_percents()
-        ahegao_prob = ahegao.probability(frame, face) if face is not None else None
+        ahegao_prob = ahegao.probability(frame, face) if (face is not None and (visible["ahegao"] or show_json)) else None
         ahegao_pct = int(100 * ahegao_prob) if ahegao_prob is not None else 0
 
         lines = []

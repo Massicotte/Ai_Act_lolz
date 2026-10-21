@@ -35,7 +35,11 @@ class DeepFaceAnalyzer:
         self._thread.start()
 
     def update(self, frame):
-        self._latest = frame.copy()
+        self._latest = frame
+
+    def needs_frame(self):
+        """True si le thread d'analyse a consomme sa derniere frame."""
+        return self._latest is None
 
     def _loop(self):
         while not self._stop.is_set():
@@ -58,6 +62,8 @@ class DeepFaceAnalyzer:
                     self._last_result = time.time()
                 except Exception:
                     pass  # pas de visage -> on garde les dernieres valeurs
+                finally:
+                    self._latest = None
             self._stop.wait(self.interval)
 
     def gender_percents(self):

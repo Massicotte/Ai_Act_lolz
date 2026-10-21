@@ -10,6 +10,7 @@ C'est EXPERIMENTAL : eclairage stable requis, aucune valeur medicale.
 """
 
 import time
+from collections import deque
 
 import numpy as np
 
@@ -19,19 +20,16 @@ class RPPGEstimator:
         self.capacity = max(60, int(fps * window_sec))
         self.min_bpm = min_bpm
         self.max_bpm = max_bpm
-        self._sig = []
-        self._times = []
+        self._sig = deque(maxlen=self.capacity)
+        self._times = deque(maxlen=self.capacity)
 
     def feed(self, frame, box):
         x1, y1, x2, y2 = box
         if x2 - x1 < 8 or y2 - y1 < 8:
             return
-        roi = frame[y1:y2, x1:x2]
-        self._sig.append(float(np.mean(roi[:, :, 1])))  # canal vert
+        roi = frame[y1:y2, x1:x2, 1]
+        self._sig.append(float(roi.mean()))  # canal vert
         self._times.append(time.perf_counter())
-        if len(self._sig) > self.capacity:
-            self._sig.pop(0)
-            self._times.pop(0)
 
     def bpm(self):
         if len(self._sig) < self.capacity // 2:
@@ -44,7 +42,7 @@ class RPPGEstimator:
             return None
 
         sig = np.asarray(self._sig, dtype=np.float64)
-        sig = sig - sig.mean()
+        sig -= sig.mean()
         windowed = sig * np.hanning(len(sig))
         spectrum = np.abs(np.fft.rfft(windowed))
         freqs = np.fft.rfftfreq(len(sig), d=1.0 / fps)
