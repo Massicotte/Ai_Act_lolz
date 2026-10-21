@@ -26,6 +26,7 @@ class DeepFaceAnalyzer:
         self.interval = interval
         self._age_hist = deque(maxlen=history)
         self._gender = None
+        self._gender_raw = None
         self._emotion = None
         self._last_result = None
         self._latest = None
@@ -34,7 +35,11 @@ class DeepFaceAnalyzer:
         self._thread.start()
 
     def update(self, frame):
-        self._latest = frame.copy()
+        self._latest = frame
+
+    def needs_frame(self):
+        """True si le thread d'analyse a consomme sa derniere frame."""
+        return self._latest is None
 
     def _loop(self):
         while not self._stop.is_set():
@@ -50,12 +55,24 @@ class DeepFaceAnalyzer:
                     if isinstance(res, list):
                         res = res[0]
                     self._age_hist.append(float(res.get("age", 0.0) or 0.0))
+                    gender_raw = res.get("gender")
+                    self._gender_raw = gender_raw if isinstance(gender_raw, dict) else None
                     self._gender = res.get("dominant_gender")
                     self._emotion = res.get("dominant_emotion")
                     self._last_result = time.time()
                 except Exception:
                     pass  # pas de visage -> on garde les dernieres valeurs
+                finally:
+                    self._latest = None
             self._stop.wait(self.interval)
+
+    def gender_percents(self):
+        """Retourne (femininite %, masculinite %) telles que vues par la machine."""
+        if not isinstance(self._gender_raw, dict):
+            return None, None
+        fem = float(self._gender_raw.get("Woman", 0.0))
+        masc = float(self._gender_raw.get("Man", 0.0))
+        return fem, masc
 
     def smoothed_age(self):
         if not self._age_hist:
