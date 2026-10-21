@@ -2,6 +2,7 @@
 ouverture des yeux, attention, clignements et ROI front (pour rPPG).
 """
 
+import time
 from collections import deque
 from dataclasses import dataclass
 
@@ -20,6 +21,11 @@ class FaceResult:
     ear: float
     attention: int
     blinks: int
+    blink_rate: float
+    perclos: float
+    smile: float
+    distance_cm: float
+    stability: int
 
 
 class FaceMeshTracker:
@@ -42,6 +48,9 @@ class FaceMeshTracker:
     _BLINK_THRESHOLD = 0.18
     _ATTENTION_YAW = 13.0
     _ATTENTION_PITCH = 13.0
+    _SMILE_L = (61, 39, 37, 91, 267, 269, 291)
+    _SMILE_TH = 0.62
+    _BLINK_WINDOW = 60.0
 
     def __init__(self):
         self._mesh = mp.solutions.face_mesh.FaceMesh(
@@ -53,6 +62,12 @@ class FaceMeshTracker:
         self._attention_hist = deque(maxlen=60)
         self._blink_state = False
         self._blinks = 0
+        self._blink_times = deque(maxlen=600)
+        self._closed_samples = 0
+        self._perclos_samples = 0
+        self._prev_center = None
+        self._move_hist = deque(maxlen=90)
+        self._t0 = None
 
     def process(self, frame):
         h, w = frame.shape[:2]
@@ -61,6 +76,7 @@ class FaceMeshTracker:
 
         if not res.multi_face_landmarks:
             self._attention_hist.append(False)
+            self._prev_center = None
             return None
 
         landmarks = res.multi_face_landmarks[0].landmark
@@ -101,12 +117,23 @@ class FaceMeshTracker:
 
         # --- Ouverture des yeux (EAR) + clignements ---
         ear = (self._ear(pts, self._EAR_L) + self._ear(pts, self._EAR_R)) / 2.0
+        now = time.perf_counter()
+        if self._t0 is None:
+            self._t0 = now
+        elapsed = min(now - self._t0, self._BLINK_WINDOW)
         if ear < self._BLINK_THRESHOLD:
+            self._closed_samples += 1
             if not self._blink_state:
                 self._blink_state = True
                 self._blinks += 1
+                self._blink_times.append(now)
         else:
             self._blink_state = False
+        self._perclos_samples += 1
+        while self._blink_times and elapsed >= self._BLINK_WINDOW and now - self._blink_times[0] > self._BLINK_WINDOW:
+            self._blink_times.popleft()
+        blink_rate = 60.0 * len(self._blink_times) / elapsed if elapsed > 0 else 0.0
+        perclos = 100.0 * self._closed_samples / self._perclos_samples if self._perclos_samples else 0.0
 
         # --- Attention : regarde vers l'ecran, yeux ouverts ---
         looking = (
@@ -117,10 +144,26 @@ class FaceMeshTracker:
         self._attention_hist.append(looking)
         attention = int(100.0 * sum(self._attention_hist) / len(self._attention_hist))
 
+        # --- Sourire (largeur bouche normalisee par la largeur du visage) ---
+        mouth_w = abs(pts[291][0] - pts[61][0])
+
         # --- Boite englobante du visage ---
-        x1, y1 = pts.min(axis=0)
-        x2, y2 = pts.max(axis=0)
-        box = (int(x1), int(y1), int(x2), int(y2))
+        bx1, by1 = pts.min(axis=0)
+        bx2, by2 = pts.max(axis=0)
+        box = (int(bx1), int(by1), int(bx2), int(by2))
+        face_w = max(box[2] - box[0], 1.0)
+        smile = max(0.0, min(1.0, (mouth_w / face_w - 0.42) / (self._SMILE_TH - 0.42)))
+
+        # --- Distance estimee (proportion empirique du visage dans le cadre) ---
+        distance_cm = 2600.0 / face_w
+
+        # --- Stabilite du visage (inversely proportionnelle au mouvement) ---
+        center = ((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
+        if self._prev_center is not None:
+            move = (abs(center[0] - self._prev_center[0]) + abs(center[1] - self._prev_center[1])) / 2.0
+            self._move_hist.append(move)
+        self._prev_center = center
+        stab = 100 - int(min(100.0, 5.0 * (sum(self._move_hist) / len(self._move_hist) if self._move_hist else 0.0)))
 
         # --- ROI front pour le rPPG ---
         top = pts[self._FOREHEAD_TOP]
@@ -141,6 +184,11 @@ class FaceMeshTracker:
             ear=ear,
             attention=attention,
             blinks=self._blinks,
+            blink_rate=blink_rate,
+            perclos=perclos,
+            smile=smile,
+            distance_cm=distance_cm,
+            stability=stab,
         )
 
     @staticmethod

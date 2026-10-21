@@ -1,7 +1,7 @@
 # Ai_Act_lolz 🔬
 
 Démo live de Computer Vision pour un show sur l'AI Act européen.
-La webcam analyse **un seul visage : le vôtre**, en **100 % local**.
+La webcam analyse **un seul visage** en **100 % local**.
 Rien n'est enregistré, rien n'est envoyé sur le réseau.
 
 ## ⚠️ Contexte d'usage (important)
@@ -10,57 +10,137 @@ Ce projet est pédagogique : il illustre ce que la computer vision sait
 inférer en direct sur un visage, afin de **montrer au public** pourquoi
 l'AI Act et le RGPD encadrent ces usages.
 
-- ✅ Utilisation prévue : **vous, seul·e, filmant votre propre visage** (auto-consentement).
-- ❌ À ne pas faire : pointer la webcam vers d'autres personnes, enregistrer,
-  diffuser, ou déployer sans consentement (cf. `AI_ACT_NOTES.md`, Article 5 de
-  l'AI Act, art. 9 du RGPD).
+- ✅ Utilisation prévue : filmer **uniquement des personnes consentantes**
+  (auto-consentement, ou consentement explicite des personnes identifiées
+  dans `people/`).
+- ❌ À ne pas faire : pointer la webcam vers d'autres personnes sans
+  consentement, enregistrer, diffuser, ou déployer sans consentement
+  (cf. `AI_ACT_NOTES.md`, Article 5 de l'AI Act, art. 9 du RGPD).
 
 ## Ce que la démo affiche en direct
 
 | Caractéristique | Méthode | Fiabilité |
 |---|---|---|
+| Identité (nom) | DeepFace VGG-Face + dossier `people/` | Bonne (si photos de qualité) |
 | Âge estimé | DeepFace | ± 5–8 ans |
-| Apparence de genre perçue* | DeepFace | Stéréotype visuel, ≠ identité de genre |
+| Apparence de genre perçue* | DeepFace (biais de démo réglable) | Stéréotype visuel, ≠ identité de genre |
 | Émotion dominante | DeepFace | Approximatif, contesté scientifiquement |
-| Pose de la tête (yaw / pitch) | MediaPipe + solvePnP | Bonne |
+| Sourire | MediaPipe (largeur bouche / visage) | Bonne |
+| Pose de la tête (yaw / pitch / roll) | MediaPipe + solvePnP | Bonne |
 | Attention (regard + yeux ouverts) | MediaPipe | Bonne |
-| Clignements | EAR (Eye Aspect Ratio) | Bonne |
+| Stabilité du visage | Vitesse de déplacement du cadrage | Bonne |
+| Distance estimée à l'écran | Proportion du visage dans le cadre | Approximative |
+| Clignements + rythme (/min) + PERCLOS | EAR (Eye Aspect Ratio) | Bonne |
 | Rythme cardiaque (rPPG) | FFT sur le canal vert du front | Expérimental |
 
 \* "Apparence perçue" : le modèle devine des stéréotypes d'apparence,
 pas le genre réel de la personne. Excellent point de discussion sur scène.
 
+**Biais de démo (pédagogique)** : par défaut, quand le modèle a un doute
+(confiance "masculine" < 60 %), la démo affiche "feminine\*" — pour montrer
+comment on peut faire dire n'importe quoi à un modèle en décalant son seuil.
+Touche `b` pour ajuster en live.
+
 Non inclus volontairement : inférence d'origine ethnique — interdite par
 l'AI Act (art. 5.1.g) et scientifiquement infondée. Voir `AI_ACT_NOTES.md`.
 
-## Installation
+## Installation pas à pas (Windows)
 
-Python 3.10 ou 3.11 recommandé (compatibilité mediapipe/deepface).
+### 1. Installer Python 3.11
 
-```bash
+- Téléchargez Python 3.11.x sur https://www.python.org/downloads/
+- **Important pendant l'installateur** : cochez **"Add python.exe to PATH"**
+  avant de cliquer sur Install.
+- Vérifiez dans PowerShell :
+
+```powershell
+python --version
+```
+
+Doit afficher `Python 3.11.x`.
+
+### 2. Cloner le dépôt
+
+```powershell
+cd $HOME
 git clone https://github.com/Massicotte/Ai_Act_lolz.git
 cd Ai_Act_lolz
+```
+
+(Git : https://git-scm.com/download/win — options par défaut.)
+
+### 3. Créer et activer le venv
+
+```powershell
 python -m venv venv
-venv\Scripts\activate      # Windows (Linux/Mac : source venv/bin/activate)
+venv\Scripts\activate
+```
+
+Le prompt doit afficher `(venv)`. Si PowerShell bloque les scripts :
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+venv\Scripts\activate
+```
+
+### 4. Installer les dépendances
+
+```powershell
+pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+⚠️ Ne mettez **pas** à jour `mediapipe` ensuite : le projet utilise
+l'API `mp.solutions`, supprimée dans les versions ≥ 0.10.21. C'est pour
+cela que `requirements.txt` pinne `mediapipe==0.10.14`.
+
+### 5. Premier lancement (téléchargement des modèles)
+
+```powershell
 python main.py
 ```
 
-Au **premier lancement**, DeepFace télécharge ses modèles (~500 Mo, une seule fois).
+Au **premier lancement**, DeepFace télécharge ses modèles (~500 Mo, une
+seule fois, connexion internet requise). La webcam s'ouvre : la démo
+affiche le panneau d'analyse en direct.
+
+### 6. (Optionnel) Reconnaissance des personnes
+
+Créez un sous-dossier par personne dans `people/`, du **nom de la
+personne**, rempli de 3–10 photos claires de son visage :
+
+```powershell
+mkdir people\nicol
+# copiez ensuite quelques photos de nicol dans people\nicol\
+```
+
+```
+people/
+  nicol/     photo1.jpg  photo2.jpg  ...
+  alice/     alice.png
+```
+
+Au démarrage, la démo apprend ces visages ; à l'écran, au lieu de
+"vous" elle affiche **le nom du dossier** ("nicol", "alice").
+Le dossier `people/` est ignoré par git : vos photos ne partent jamais
+sur GitHub. **Consentement obligatoire** : données biométriques (RGPD
+art. 9).
 
 ## Commandes
 
 | Touche | Action |
 |---|---|
 | `q` | Quitter |
+| `f` | Plein écran (letterbox : bandes noires, proportions conservées) |
 | `d` | Afficher/masquer la ROI front (debug rPPG) |
+| `b` | Ajuster le biais genre de démo (seuil de confiance "masculine") |
 
 ## En faire un .exe (PyInstaller)
 
 Empaqueter mediapipe + deepface est lourd : pour le show, le plus fiable est
 de lancer depuis le venv (déjà installé = zéro surprise). Sinon :
 
-```bash
+```powershell
 pip install pyinstaller
 pyinstaller --onefile --name ai-act-lolz main.py
 ```
