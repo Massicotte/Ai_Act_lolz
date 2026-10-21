@@ -67,7 +67,7 @@ class PeopleRecognizer:
             if refs:
                 print(f"Reconnaissance active : {len(refs)} personne(s), {count} photo(s).")
             else:
-                print("Reconnaissance : aucune reference dans people/ (touche 'n' pour enregistrer).")
+                print("Reconnaissance : aucune photo dans people/. Glissez des photos dans un sous-dossier people/<nom>/ et la machine les apprend automatiquement.")
         except Exception as exc:
             print(f"[people] chargement des references impossible : {exc}")
         finally:

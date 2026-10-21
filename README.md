@@ -119,13 +119,9 @@ affiche le panneau d'analyse en direct.
 
 ### 6. (Optionnel) Reconnaissance des personnes
 
-**Le plus simple — enregistrement en direct** : lancez la démo, appuyez sur
-`n`, tapez le nom de la personne dans le terminal, et regardez la caméra.
-La machine capture elle-même ~12 photos en 6 secondes et apprend le
-visage en arrière-plan — aucun fichier à préparer.
-
-**Ou manuellement** : créez un sous-dossier par personne dans `people/`,
-du **nom de la personne**, rempli de 3–10 photos claires de son visage :
+Glissez-déposez des photos dans des sous-dossiers de `people/`, un sous-dossier
+par personne, portant **le nom de la personne** (3–10 photos claires du visage,
+de face et bien éclairé) :
 
 ```powershell
 mkdir people\nicol
@@ -140,6 +136,12 @@ people/
 
 Au démarrage, la démo apprend ces visages ; à l'écran, au lieu de
 "vous" elle affiche **le nom du dossier** ("nicol", "alice").
+
+**Rechargement automatique** : la démo surveille `people/` en continu —
+glissez une nouvelle personne ou de nouvelles photos **pendant que la démo
+tourne**, la machine les apprend en arrière-plan dans les secondes qui
+suivent (message `Reconnaissance active : ...` dans le terminal). Pas
+besoin de redémarrer.
 Le dossier `people/` est ignoré par git : vos photos ne partent jamais
 sur GitHub. **Consentement obligatoire** : données biométriques (RGPD
 art. 9).
@@ -155,7 +157,6 @@ par touche clavier (ci-dessous) ou par interrupteur dans la fenêtre
 | Touche | Info / action |
 |---|---|
 | `q` | Quitter |
-| `n` | Enregistrer une personne en direct (nom au terminal, capture auto) |
 | `p` | Plein écran (letterbox : bandes noires, proportions conservées) |
 | `j` | Afficher/masquer la fenêtre JSON brut (données produites chaque seconde) |
 | `d` | Afficher/masquer la ROI front (debug rPPG) |
