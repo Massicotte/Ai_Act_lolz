@@ -119,8 +119,13 @@ affiche le panneau d'analyse en direct.
 
 ### 6. (Optionnel) Reconnaissance des personnes
 
-Créez un sous-dossier par personne dans `people/`, du **nom de la
-personne**, rempli de 3–10 photos claires de son visage :
+**Le plus simple — enregistrement en direct** : lancez la démo, appuyez sur
+`n`, tapez le nom de la personne dans le terminal, et regardez la caméra.
+La machine capture elle-même ~12 photos en 6 secondes et apprend le
+visage en arrière-plan — aucun fichier à préparer.
+
+**Ou manuellement** : créez un sous-dossier par personne dans `people/`,
+du **nom de la personne**, rempli de 3–10 photos claires de son visage :
 
 ```powershell
 mkdir people\nicol
@@ -150,6 +155,7 @@ par touche clavier (ci-dessous) ou par interrupteur dans la fenêtre
 | Touche | Info / action |
 |---|---|
 | `q` | Quitter |
+| `n` | Enregistrer une personne en direct (nom au terminal, capture auto) |
 | `p` | Plein écran (letterbox : bandes noires, proportions conservées) |
 | `j` | Afficher/masquer la fenêtre JSON brut (données produites chaque seconde) |
 | `d` | Afficher/masquer la ROI front (debug rPPG) |

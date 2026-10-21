@@ -16,7 +16,9 @@ Fenetres :
 Le clavier reste fonctionnel : voir README.md (tableau des touches).
 """
 
+import datetime
 import json
+import os
 import time
 
 import cv2
@@ -29,6 +31,10 @@ from trackers.facemesh_tracker import FaceMeshTracker
 from trackers.rppg import RPPGEstimator
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
+PEOPLE_DIR = "people"
+ENROLL_FRAMES = 12        # photos capturees pendant un enregistrement
+ENROLL_EVERY = 15         # 1 photo tous les N frames (~2/s a 30 fps)
+ENROLL_COOLDOWN = 20      # frames d'ecart entre la demande et la capture
 WINDOW = "Ai Act Lolz"
 JSON_WINDOW = "Ai Act Lolz - JSON brut"
 CTRL_WINDOW = "Ai Act Lolz - Controles"
@@ -162,6 +168,23 @@ def sync_control_window(visible):
             pass
 
 
+def enroll(people_dir, name, frame):
+    """Sauvegarde une frame d'enregistrement pour la personne 'name'."""
+    folder = os.path.join(people_dir, name)
+    os.makedirs(folder, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    path = os.path.join(folder, f"auto_{stamp}.jpg")
+    cv2.imwrite(path, frame)
+    return path
+
+
+def ask_name():
+    """Demande le nom de la personne a enregistrer dans le terminal."""
+    print("\n=== ENREGISTREMENT D'UNE PERSONNE ===")
+    name = input("Nom de la personne (nom du dossier affiche) : ").strip()
+    return "_".join(name.split()) if name else None
+
+
 def main():
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     fullscreen = False
@@ -196,6 +219,12 @@ def main():
 
     show_roi = False
     read_failures = 0
+    frame_count = 0
+    enrolling = False          # enregistrement en cours
+    enroll_name = None
+    enroll_countdown = 0       # frames avant la premiere capture
+    enroll_captured = 0
+    enroll_last = 0
 
     while True:
         ok, frame = cap.read()
@@ -206,6 +235,7 @@ def main():
                 break
             continue
         read_failures = 0
+        frame_count += 1
         cv2.flip(frame, 1, dst=frame)  # effet miroir, en place
 
         if analyzer.needs_frame() or recognizer.needs_frame():
@@ -268,6 +298,27 @@ def main():
             cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), 18)
             cv2.putText(frame, "AHEGAO DETECTE", (w // 2 - 300, h // 2), FONT, 1.4, (0, 0, 255), 4, cv2.LINE_AA)
 
+        # --- enregistrement en direct (touche 'n') ---
+        if enrolling:
+            h, w = frame.shape[:2]
+            if face is None:
+                cv2.putText(frame, f"ENREGISTREMENT {enroll_name} : regardez la camera", (20, h - 30), FONT, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+            elif enroll_countdown > 0:
+                enroll_countdown -= 1
+                cv2.putText(frame, f"ENREGISTREMENT {enroll_name} : regardez la camera", (20, h - 30), FONT, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+            else:
+                if (frame_count - enroll_last) >= ENROLL_EVERY and enroll_captured < ENROLL_FRAMES:
+                    enroll_last = frame_count
+                    enroll(PEOPLE_DIR, enroll_name, frame)
+                    enroll_captured += 1
+                    print(f"  capture {enroll_captured}/{ENROLL_FRAMES}...")
+                cv2.putText(frame, f"ENREGISTREMENT {enroll_name} : {enroll_captured}/{ENROLL_FRAMES}", (20, h - 30), FONT, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+                if enroll_captured >= ENROLL_FRAMES:
+                    enrolling = False
+                    print(f"Enregistrement de '{enroll_name}' termine ({ENROLL_FRAMES} photos).")
+                    print("Apprentissage en arriere-plan...")
+                    recognizer.reload()
+
         # --- affichage : la video ne se deforme jamais, le panneau s'adapte ---
         try:
             _, _, win_w, win_h = cv2.getWindowImageRect(WINDOW)
@@ -310,6 +361,16 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
+        if key == ord("n") and not enrolling:
+            enroll_name = ask_name()
+            if enroll_name:
+                enrolling = True
+                enroll_captured = 0
+                enroll_countdown = ENROLL_COOLDOWN
+                enroll_last = -ENROLL_EVERY
+                print(f"Regardez la camera : capture de {ENROLL_FRAMES} photos automatique...")
+            else:
+                print("Enregistrement annule.")
         if key == ord("p"):
             fullscreen = not fullscreen
             cv2.setWindowProperty(
