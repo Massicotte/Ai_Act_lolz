@@ -39,12 +39,27 @@ class PeopleRecognizer:
         self._name = None
         self._score = 0.0
         self._latest = None
+        self._people_dir = people_dir
+        self._names = []
+        self._embeddings = []
+        self._db_ready = False
         self._stop = threading.Event()
-        self._names, self._embeddings = self._build_db(people_dir)
-        if self._names:
-            print(f"Reconnaissance active : {len(self._names)} personne(s) chargee(s).")
+        self._db_thread = threading.Thread(target=self._build_db_async, daemon=True)
+        self._db_thread.start()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+
+    def _build_db_async(self):
+        """Construit la base d'embeddings en arriere-plan (peut telecharger
+        les poids VGG-Face au premier lancement : ne doit jamais bloquer l'UI)."""
+        try:
+            self._names, self._embeddings = self._build_db(self._people_dir)
+            if self._names:
+                print(f"Reconnaissance active : {len(self._names)} personne(s) chargee(s).")
+        except Exception as exc:
+            print(f"[people] chargement des references impossible : {exc}")
+        finally:
+            self._db_ready = True
 
     def _build_db(self, people_dir):
         names, embeddings = [], []
@@ -82,7 +97,7 @@ class PeopleRecognizer:
 
     def _loop(self):
         while not self._stop.is_set():
-            if self._latest is not None and self._names:
+            if self._latest is not None and self._db_ready and self._names:
                 try:
                     reps = DeepFace.represent(
                         self._latest,

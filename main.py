@@ -90,9 +90,15 @@ def main():
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     fullscreen = False
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
-        raise RuntimeError("Impossible d'ouvrir la webcam (index 0).")
+        cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise RuntimeError(
+            "Impossible d'ouvrir la webcam (index 0).\n"
+            " - Windows : Parametres > Confidentialite > Camera > autoriser les applications de bureau.\n"
+            " - Verifiez qu'aucune autre app (Zoom, Teams...) n'occupe la webcam."
+        )
 
     mesh = FaceMeshTracker()
     analyzer = DeepFaceAnalyzer(interval=2.5)
@@ -124,11 +130,16 @@ def main():
     print("Le premier lancement telecharge les modeles DeepFace, patience...")
 
     show_roi = False
+    read_failures = 0
 
     while True:
         ok, frame = cap.read()
         if not ok:
-            break
+            read_failures += 1
+            if read_failures > 60:
+                print("Webcam illisible (60 echecs consecutifs) : arret. Verifiez la confidentialite camera.")
+                break
+            continue
         frame = cv2.flip(frame, 1)  # effet miroir
 
         analyzer.update(frame)
