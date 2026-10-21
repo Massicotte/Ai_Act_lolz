@@ -11,8 +11,18 @@ le nom du dossier = le nom affiche) remplis de photos. La demo affiche
 alors le nom de la personne reconnue au lieu de "vous". Donnee biometrique :
 consentement obligatoire (RGPD art. 9, AI Act art. 5).
 
-Touches : 'q' quitter, 'd' afficher/masquer la ROI front (debug rPPG),
-'f' basculer le plein ecran, 'j' afficher/masquer la fenetre JSON brut.
+Chaque info du panneau est affichee/masquee individuellement par sa
+propre touche (voir KEYS / README.md).
+
+Touches :
+  q  quitter
+  p  plein ecran (letterbox : proportions conservees)
+  j  fenetre JSON brut
+  d  ROI front (debug rPPG)
+  i  identite      a  age           f  femininite   m  masculinite
+  e  emotion       g  ahegao        s  sourire      t  pose de tete
+  v  attention     b  stabilite     l  distance     c  clignements
+  y  yeux fermes   h  BPM
 """
 
 import json
@@ -33,20 +43,7 @@ JSON_WINDOW = "Ai Act Lolz - JSON brut"
 PANEL_X, PANEL_Y = 10, 24
 LINE_H = 26
 JSON_INTERVAL = 1.0
-AHEGAO_ALERT = 0.75
-
-
-def draw_json_window(payload):
-    """Fenetre noire affichant le JSON brut produit chaque seconde."""
-    text = json.dumps(payload, ensure_ascii=False, indent=2)
-    canvas = np.zeros((900, 640, 3), dtype=np.uint8)
-    y = 28
-    for line in text.splitlines():
-        cv2.putText(canvas, line, (14, y), FONT, 0.5, (120, 220, 120), 1, cv2.LINE_AA)
-        y += 22
-        if y > 880:
-            break
-    return canvas
+AHEGAO_ALERT = 0.6  # seuil du modele original Sir-Prise
 
 
 def letterbox(frame, canvas_w, canvas_h):
@@ -59,6 +56,19 @@ def letterbox(frame, canvas_w, canvas_h):
     ox = (canvas_w - new_w) // 2
     oy = (canvas_h - new_h) // 2
     canvas[oy:oy + new_h, ox:ox + new_w] = resized
+    return canvas
+
+
+def draw_json_window(payload):
+    """Fenetre noire affichant le JSON brut produit chaque seconde."""
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    canvas = np.zeros((900, 640, 3), dtype=np.uint8)
+    y = 28
+    for line in text.splitlines():
+        cv2.putText(canvas, line, (14, y), FONT, 0.5, (120, 220, 120), 1, cv2.LINE_AA)
+        y += 22
+        if y > 880:
+            break
     return canvas
 
 
@@ -79,7 +89,6 @@ def draw_panel(frame, lines):
 def main():
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     fullscreen = False
-    cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL if not fullscreen else cv2.WINDOW_FULLSCREEN)
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -96,7 +105,22 @@ def main():
     show_json = True
     last_json_t = 0.0
 
-    print(f"{WINDOW} en ligne - 'q' quitter, 'f' plein ecran, 'j' JSON, 'd' debug rPPG.")
+    # Visibilite individuelle de chaque info du panneau.
+    visible = {
+        "identite": True, "age": True, "femininite": True, "masculinite": True,
+        "emotion": True, "ahegao": True, "sourire": True, "pose": True,
+        "attention": True, "stabilite": True, "distance": True,
+        "clignements": True, "perclos": True, "bpm": True,
+    }
+    TOGGLES = {
+        ord("i"): "identite", ord("a"): "age", ord("f"): "femininite",
+        ord("m"): "masculinite", ord("e"): "emotion", ord("g"): "ahegao",
+        ord("s"): "sourire", ord("t"): "pose", ord("v"): "attention",
+        ord("b"): "stabilite", ord("l"): "distance", ord("c"): "clignements",
+        ord("y"): "perclos", ord("h"): "bpm",
+    }
+
+    print(f"{WINDOW} en ligne - chaque info est masquable par sa touche (voir README).")
     print("Le premier lancement telecharge les modeles DeepFace, patience...")
 
     show_roi = False
@@ -112,14 +136,16 @@ def main():
         face = mesh.process(frame)
 
         fem, masc = analyzer.gender_percents()
-        ahegao_score = ahegao.score(frame, face) if face is not None else 0.0
+        ahegao_prob = ahegao.probability(frame, face) if face is not None else None
+        ahegao_pct = int(100 * ahegao_prob) if ahegao_prob is not None else 0
 
         lines = []
         if face is not None:
             cv2.rectangle(frame, face.box, (90, 220, 255), 2)
             name = recognizer.name()
             label = name if name else "vous"
-            cv2.putText(frame, label, (face.box[0], face.box[1] - 10), FONT, 0.6, (90, 220, 255), 1, cv2.LINE_AA)
+            if visible["identite"]:
+                cv2.putText(frame, label, (face.box[0], face.box[1] - 10), FONT, 0.6, (90, 220, 255), 1, cv2.LINE_AA)
 
             if show_roi:
                 cv2.rectangle(frame, face.forehead_box, (0, 255, 120), 1)
@@ -127,29 +153,38 @@ def main():
             rppg.feed(frame, face.forehead_box)
             bpm = rppg.bpm()
 
-            lines.append(("Identite", label))
-            lines.append(("Age estime", analyzer.smoothed_age()))
-            if fem is not None:
-                lines.append(("Femininite*", f"{fem:.0f} %"))
-                lines.append(("Masculinite*", f"{masc:.0f} %"))
-            else:
-                lines.append(("Femininite*", "--"))
-                lines.append(("Masculinite*", "--"))
-            lines.append(("Emotion dom.", analyzer.emotion()))
-            lines.append(("Ahegao", f"{int(100 * ahegao_score)} %"))
-            lines.append(("Sourire", f"{int(100 * face.smile)} %"))
-            lines.append(("Pose tete", f"yaw {face.yaw:+.0f} pitch {face.pitch:+.0f}"))
-            lines.append(("Attention", f"{face.attention} %"))
-            lines.append(("Stabilite", f"{face.stability} %"))
-            lines.append(("Distance", f"~{face.distance_cm:.0f} cm"))
-            lines.append(("Clignements", f"{face.blinks} ({face.blink_rate:.0f}/min)"))
-            lines.append(("Yeux fermes", f"{face.perclos:.0f} %"))
-            if bpm is not None:
+            if visible["identite"]:
+                lines.append(("Identite", label))
+            if visible["age"]:
+                lines.append(("Age estime", analyzer.smoothed_age()))
+            if visible["femininite"]:
+                lines.append(("Femininite*", f"{fem:.0f} %" if fem is not None else "--"))
+            if visible["masculinite"]:
+                lines.append(("Masculinite*", f"{masc:.0f} %" if masc is not None else "--"))
+            if visible["emotion"]:
+                lines.append(("Emotion dom.", analyzer.emotion()))
+            if visible["ahegao"]:
+                lines.append(("Ahegao", f"{ahegao_pct} %"))
+            if visible["sourire"]:
+                lines.append(("Sourire", f"{int(100 * face.smile)} %"))
+            if visible["pose"]:
+                lines.append(("Pose tete", f"yaw {face.yaw:+.0f} pitch {face.pitch:+.0f}"))
+            if visible["attention"]:
+                lines.append(("Attention", f"{face.attention} %"))
+            if visible["stabilite"]:
+                lines.append(("Stabilite", f"{face.stability} %"))
+            if visible["distance"]:
+                lines.append(("Distance", f"~{face.distance_cm:.0f} cm"))
+            if visible["clignements"]:
+                lines.append(("Clignements", f"{face.blinks} ({face.blink_rate:.0f}/min)"))
+            if visible["perclos"]:
+                lines.append(("Yeux fermes", f"{face.perclos:.0f} %"))
+            if visible["bpm"] and bpm is not None:
                 lines.append(("BPM (exp.)", f"{bpm:.0f}"))
         else:
             lines.append(("Statut", "aucun visage detecte"))
 
-        if ahegao_score >= AHEGAO_ALERT:
+        if ahegao_prob is not None and ahegao_prob >= AHEGAO_ALERT and visible["ahegao"]:
             h, w = frame.shape[:2]
             cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), 18)
             cv2.putText(frame, "AHEGAO DETECTE", (w // 2 - 300, h // 2), FONT, 1.4, (0, 0, 255), 4, cv2.LINE_AA)
@@ -170,7 +205,7 @@ def main():
                     "femininite_pct": round(fem, 1) if fem is not None else None,
                     "masculinite_pct": round(masc, 1) if masc is not None else None,
                     "emotion": analyzer.emotion(),
-                    "ahegao_score": round(ahegao_score, 2),
+                    "ahegao_probabilite": round(ahegao_prob, 3) if ahegao_prob is not None else None,
                     "sourire_pct": int(100 * face.smile),
                     "pose": {"yaw": round(face.yaw, 1), "pitch": round(face.pitch, 1), "roll": round(face.roll, 1)},
                     "attention_pct": face.attention,
@@ -194,7 +229,7 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
-        if key == ord("f"):
+        if key == ord("p"):
             fullscreen = not fullscreen
             cv2.setWindowProperty(
                 WINDOW,
@@ -207,6 +242,11 @@ def main():
             show_json = not show_json
             if not show_json:
                 cv2.destroyWindow(JSON_WINDOW)
+        if key in TOGGLES:
+            info = TOGGLES[key]
+            visible[info] = not visible[info]
+            etat = "affichee" if visible[info] else "masquee"
+            print(f"Info '{info}' : {etat}")
 
     analyzer.stop()
     recognizer.stop()

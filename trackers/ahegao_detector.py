@@ -1,86 +1,124 @@
-"""Detecteur d'ahegao (blague finale de la demo).
+"""Detecteur d'ahegao base sur le CNN du projet ahegao-detector
+(https://github.com/Sir-Prise/ahegao-detector, commite ici sous models/ahegao/).
 
-L'ahegao est une expression exageree : yeux mi-clos ou roules, bouche
-tres ouverte, langue sortie, joues duvrees. On l'approche par des
-heuristiques geometriques sur les landmarks MediaPipe :
+Pipeline (identique au projet original) :
+  1. crop carre du visage depuis la frame (box FaceMesh, etendue en carre)
+  2. resize 75x75, RGB, normalise /255
+  3. CNN : 3 x [Conv2D(relu) + MaxPool] -> Flatten -> Dense(512, relu)
+     -> Dense(1, sigmoid)
+  4. probabilite d'ahegao ; seuil de detection a 0.6 (comme l'original)
 
-- yeux : EAR ( Eye Aspect Ratio ) tres bas SANS clignement prolonge
-  (roulement / plissement volontaire)
-- bouche : ouverture verticale tres grande normalisee par la taille
-  du visage ( AHO )
-- langue : presence de pixels clairs au centre de la bouche ouverte
-- asymetrie : rien ici, on garde simple
+L'inference est implementee en numpy pur (pas de TensorFlow requis) :
+les poids du fichier binaire tfjs sont charges au demarrage une seule
+fois, puis chaque frame est classee en ~quelques millisecondes.
 
-Score = moyenne ponderee de ces indices, exprime en %.
-C'est une HEURISTIQUE humoristique, pas un modele entraine : attendez
-des faux positifs sur les grimaces genereuses. C'est aussi le propos de
-la demo : une machine peut vous faire dire n'importe quoi.
-
-Seuil d'affichage : 75 % (le "AHEGAO DETECTE" ne declenche que sur une
-vraie grimaceengagee).
+La partie buttplug du projet original est volontairement omise.
 """
+
+import json
+import os
 
 import cv2
 import numpy as np
 
-from trackers.facemesh_tracker import FaceMeshTracker
+MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "ahegao")
+THRESHOLD = 0.6  # seuil du projet original
+INPUT_SIZE = 75
+
+
+def _conv2d_fast(x, kernel, bias):
+    """Conv2D 'same' via im2col (vectorise)."""
+    kh, kw, cin, cout = kernel.shape
+    h, w, _ = x.shape
+    pad_h = (kh - 1) // 2
+    pad_w = (kw - 1) // 2
+    xp = np.pad(x, ((pad_h, kh - 1 - pad_h), (pad_w, kw - 1 - pad_w), (0, 0)))
+    cols = np.empty((h * w, kh * kw * cin), dtype=np.float32)
+    idx = 0
+    for i in range(kh):
+        for j in range(kw):
+            patch = xp[i:i + h, j:j + w, :]
+            cols[:, idx:idx + cin] = patch.reshape(h * w, cin)
+            idx += cin
+    weights = kernel.reshape(kh * kw * cin, cout)
+    out = cols @ weights + bias
+    return np.maximum(out.reshape(h, w, cout), 0.0)
+
+
+def _maxpool2x2(x):
+    h, w, c = x.shape
+    return x[: h // 2 * 2, : w // 2 * 2, :].reshape(h // 2, 2, w // 2, 2, c).max(axis=(1, 3))
 
 
 class AhegaoDetector:
-    # landmarks MediaPipe (refined)
-    _LIPS_TOP = 13
-    _LIPS_BOTTOM = 14
-    _MOUTH_LEFT = 61
-    _MOUTH_RIGHT = 291
-    _EYE_L_IDS = (33, 160, 158, 133, 153, 144)
-    _EYE_R_IDS = (362, 385, 387, 263, 373, 380)
+    def __init__(self, model_dir=MODEL_DIR):
+        self.threshold = THRESHOLD
+        self._weights = self._load(model_dir)
 
-    EAR_MAX = 0.25       # en dessous : yeux plisses / mi-clos
-    AHO_TH = 0.16        # ouverture bouche / hauteur visage au-dessus de ce seuil
-    AHO_MAX = 0.30       # ouverture correspondant au score plein
-    TONGUE_LUM = 150.0  # luminance moyenne min dans la bouche pour "langue"
+    @staticmethod
+    def _load(model_dir):
+        with open(os.path.join(model_dir, "model.json"), "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        specs = manifest["weightsManifest"][0]["weights"]
+        shard_file = manifest["weightsManifest"][0]["paths"][0]
+        with open(os.path.join(model_dir, shard_file), "rb") as f:
+            shard = f.read()
+        weights = {}
+        offset = 0
+        for spec in specs:
+            n = int(np.prod(spec["shape"])) if spec["shape"] else 1
+            raw = np.frombuffer(shard, dtype=np.uint8, count=n, offset=offset)
+            offset += n
+            quant = spec.get("quantization")
+            if quant:
+                arr = quant["min"] + raw.astype(np.float32) * quant["scale"]
+            else:
+                arr = raw.astype(spec.get("dtype", "float32"))
+            weights[spec["name"]] = arr.reshape(spec["shape"]).astype(np.float32)
+        return weights
 
-    def __init__(self, weights=None):
-        w = {"ear": 0.40, "mouth": 0.45, "tongue": 0.15}
-        if weights:
-            w.update(weights)
-        total = sum(w.values()) or 1.0
-        self.w = {k: v / total for k, v in w.items()}
+    def probability(self, frame, face):
+        """Probabilite d'ahegao (0..1) sur le visage detecte, ou None."""
+        if face is None:
+            return None
+        crop = self._square_crop(frame, face.box)
+        if crop is None:
+            return None
+        img = cv2.resize(crop, (INPUT_SIZE, INPUT_SIZE), interpolation=cv2.INTER_AREA)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+
+        w = self._weights
+        x = img
+        x = _conv2d_fast(x, w["conv2d/kernel"], w["conv2d/bias"])
+        x = _maxpool2x2(x)
+        x = _conv2d_fast(x, w["conv2d_1/kernel"], w["conv2d_1/bias"])
+        x = _maxpool2x2(x)
+        x = _conv2d_fast(x, w["conv2d_2/kernel"], w["conv2d_2/bias"])
+        x = _maxpool2x2(x)
+        x = x.reshape(-1)
+        x = np.maximum(x @ w["dense/kernel"] + w["dense/bias"], 0.0)
+        logit = float((x @ w["dense_1/kernel"] + w["dense_1/bias"])[0])
+        return float(1.0 / (1.0 + np.exp(-logit)))
 
     def score(self, frame, face):
-        """Retourne un score ahegao 0..1 (et un detail optionnel)."""
-        if face is None:
-            return 0.0
-        pts = getattr(face, "landmarks", None)
-        if pts is None:
-            return 0.0
+        """Compatibilite avec l'ancien nom : probabilite 0..1 (0 sans visage)."""
+        p = self.probability(frame, face)
+        return 0.0 if p is None else p
+
+    @staticmethod
+    def _square_crop(frame, box):
         h, w = frame.shape[:2]
-        face_h = max(face.box[3] - face.box[1], 1)
-        face_w = max(face.box[2] - face.box[0], 1)
-
-        ear = face.ear
-        ear_score = max(0.0, min(1.0, (self.EAR_MAX - ear) / self.EAR_MAX))
-
-        mouth_open = abs(pts[self._LIPS_BOTTOM][1] - pts[self._LIPS_TOP][1])
-        mouth_w = max(abs(pts[self._MOUTH_RIGHT][0] - pts[self._MOUTH_LEFT][0]), 1.0)
-        aho = mouth_open / face_h
-        mouth_score = max(0.0, min(1.0, (aho - self.AHO_TH) / (self.AHO_MAX - self.AHO_TH)))
-
-        tongue_score = 0.0
-        if aho > self.AHO_TH:
-            cx = int((pts[self._LIPS_TOP][0] + pts[self._LIPS_BOTTOM][0]) / 2)
-            cy = int((pts[self._LIPS_TOP][1] + pts[self._LIPS_BOTTOM][1]) / 2)
-            half = max(2, int(mouth_w * 0.25))
-            x1, y1 = max(0, cx - half), max(0, cy - half)
-            x2, y2 = min(w, cx + half), min(h, cy + half)
-            if x2 > x1 and y2 > y1:
-                inner = frame[y1:y2, x1:x2]
-                lum = float(np.mean(cv2.cvtColor(inner, cv2.COLOR_BGR2GRAY)))
-                tongue_score = max(0.0, min(1.0, (lum - 90.0) / (self.TONGUE_LUM - 90.0)))
-
-        score = (
-            self.w["ear"] * ear_score
-            + self.w["mouth"] * mouth_score
-            + self.w["tongue"] * tongue_score
-        )
-        return float(max(0.0, min(1.0, score)))
+        x1, y1, x2, y2 = box
+        side = max(x2 - x1, y2 - y1)
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+        half = side // 2
+        sx1, sy1 = cx - half, cy - half
+        sx2, sy2 = sx1 + side, sy1 + side
+        if sx1 < 0 or sy1 < 0 or sx2 > w or sy2 > h:
+            # crop aux frontieres : on decoupe ce qui est visible (comme drawImage)
+            px1, py1 = max(0, sx1), max(0, sy1)
+            px2, py2 = min(w, sx2), min(h, sy2)
+            if px2 - px1 < 10 or py2 - py1 < 10:
+                return None
+            return frame[py1:py2, px1:px2]
+        return frame[sy1:sy2, sx1:sx2]

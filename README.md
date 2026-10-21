@@ -25,7 +25,7 @@ l'AI Act et le RGPD encadrent ces usages.
 | Âge estimé | DeepFace | ± 5–8 ans |
 | Féminité perçue / Masculinité perçue (en %) | DeepFace (probabilités brutes) | Stéréotype visuel, ≠ identité de genre |
 | Émotion dominante | DeepFace | Approximatif, contesté scientifiquement |
-| Ahegao (blague finale) | Heuristique MediaPipe : yeux plissés + bouche ouverte + langue | Humoristique, faux positifs assumés |
+| Ahegao (blague finale) | CNN du projet [ahegao-detector](https://github.com/Sir-Prise/ahegao-detector) (crop visage 75×75 → classifieur, seuil 0.6) | Bonne sur vraie grimace |
 | Sourire | MediaPipe (largeur bouche / visage) | Bonne |
 | Pose de la tête (yaw / pitch / roll) | MediaPipe + solvePnP | Bonne |
 | Attention (regard + yeux ouverts) | MediaPipe | Bonne |
@@ -131,16 +131,44 @@ art. 9).
 
 ## Commandes
 
-| Touche | Action |
+Chaque info du panneau peut être affichée ou masquée individuellement —
+pratique pour construire la progression du show : vous ne montrez au
+public, une par une, que les capacités de la machine.
+
+| Touche | Info / action |
 |---|---|
 | `q` | Quitter |
-| `f` | Plein écran (letterbox : bandes noires, proportions conservées) |
+| `p` | Plein écran (letterbox : bandes noires, proportions conservées) |
 | `j` | Afficher/masquer la fenêtre JSON brut (données produites chaque seconde) |
 | `d` | Afficher/masquer la ROI front (debug rPPG) |
+| `i` | Identité (nom reconnu via `people/`) |
+| `a` | Âge estimé |
+| `f` | Fémininité perçue (%) |
+| `m` | Masculinité perçue (%) |
+| `e` | Émotion dominante |
+| `g` | Ahegao (%) |
+| `s` | Sourire (%) |
+| `t` | Pose de tête (yaw/pitch) |
+| `v` | Attention (%) |
+| `b` | Stabilité (%) |
+| `l` | Distance estimée (cm) |
+| `c` | Clignements (total + /min) |
+| `y` | Yeux fermés / PERCLOS (%) |
+| `h` | Rythme cardiaque rPPG (BPM, expérimental) |
 
-À 75 % de score ahegao, un cadre rouge "AHEGAO DETECTE" s'affiche — c'est
-la blague finale, et aussi la démonstration qu'une machine peut vous
-faire dire n'importe quoi avec quelques heuristiques.
+Le terminal confirme chaque bascule (`Info 'age' : masquee`). Toutes les
+infos restent dans le JSON brut, même masquées du panneau.
+
+## Détecteur d'ahegao
+
+Le détecteur reprend le CNN du projet
+[ahegao-detector](https://github.com/Sir-Prise/ahegao-detector) (merci à
+Sir-Prise) : crop carré du visage, resize 75×75, réseau 3 conv + dense,
+seuil 0.6. Les poids (2,7 Mo, quantifiés uint8) sont committés dans
+`models/ahegao/` — aucun téléchargement au lancement. L'inférence est en
+numpy pur (~2 ms/frame), sans TensorFlow. Au-dessus du seuil : cadre
+rouge + "AHEGAO DETECTE" — la blague finale. (La partie buttplug du
+projet original n'est volontairement pas reprise.)
 
 ## En faire un .exe (PyInstaller)
 
